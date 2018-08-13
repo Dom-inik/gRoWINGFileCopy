@@ -1,0 +1,107 @@
+package main
+
+import (
+	"flag"
+	"io"
+	"log"
+	"os"
+	"time"
+)
+
+func copy(src string, dst string) {
+	// Open the source file in read only mode
+	s, err := os.OpenFile(src, os.O_RDONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer s.Close() // Close it after we finished the job
+
+	// Remove old destination file to make sure we start from scratch
+	err = os.Remove(dst)
+	if err != nil {
+		log.Println(err)
+	}
+
+	// Open destination file in append mode. If file does not exist, create it
+	// Mediagrid fsd does not support the syscall o_append. It returns error code 0x10020d
+	// See workaround line 49
+	d, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0644) //os.O_APPEND|
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Start at the beginning of the source file
+	var src_offset int64 = 0
+
+	// Run this each second. i increases each run until 5
+	// So in fact we wait 6 seconds until we say the file does not grow anymore
+	var interval = 6
+	i := interval
+	for i >= 1 {
+		time.Sleep(1000 * time.Millisecond)
+
+		// Get file information from source file
+		si, err := s.Stat()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Workaround: Mediagrid does not support syscall o_append
+		// Thus we have to set the pointer manually to the eof
+		// read file info including size and set pointer
+		di, err := d.Stat()
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = d.Seek(di.Size(), 0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// end of workaround
+
+		log.Println("[check  ] i=", i, "src_offset=", src_offset, "src file size=", si.Size()) // debug output
+
+		// If source file is bigger than our src_offset we copy all the missing data to the end of the destination file
+		if si.Size() > src_offset {
+			// Set the pointer to the last offset of the source file
+			_, err = s.Seek(src_offset, 0)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// Copy the data. It returns us how many bytes have been copied
+			written, err := io.Copy(d, s)
+			if err != nil {
+				d.Close()
+				log.Fatal(err)
+			}
+
+			// Set the new offset
+			src_offset = src_offset + written
+
+			log.Println("[copy   ] i=", i, "written=", written, "new src_offset=", src_offset) // debug output
+
+			// File has been modified. Restart count countdown
+			i = interval
+
+		} else {
+			// count down
+			i--
+		}
+	}
+
+	// Close the destination file
+	d.Close()
+}
+
+func main() {
+	log.Println("Started ...")
+	var src = flag.String("src", "", "source file path")
+	var dst = flag.String("dst", "", "destination file path")
+
+	flag.Parse()
+
+	copy(*src, *dst)
+
+	log.Println("... Finished")
+}
