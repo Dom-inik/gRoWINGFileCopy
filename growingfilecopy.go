@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -21,7 +23,7 @@ func copyBufferN(dst io.Writer, src io.Reader, b []byte, n int64) (written int64
 	return
 }
 
-func copy(src string, dst string, chunk int64) {
+func copy(src string, dst string, chunk int64, wait bool) {
 	// Open the source file in read only mode
 	s, err := os.OpenFile(src, os.O_RDONLY, 0644)
 	if err != nil {
@@ -107,6 +109,13 @@ func copy(src string, dst string, chunk int64) {
 			// File has been modified. Restart count countdown
 			i = interval
 
+			// For debugging the append workflow
+			if wait {
+				fmt.Println("Press any key to continue ...")
+				input := bufio.NewScanner(os.Stdin)
+				input.Scan()
+			}
+
 		} else {
 			// count down
 			i--
@@ -122,10 +131,11 @@ func main() {
 	var src = flag.String("src", "", "source file path")
 	var dst = flag.String("dst", "", "destination file path")
 	var chunkSize = flag.Int64("cs", 50*1024*1024, "chunk size in byte")
+	var wait = flag.Bool("wait", false, "wait after each chunk for keyboard input")
 
 	flag.Parse()
 
-	copy(*src, *dst, *chunkSize)
+	copy(*src, *dst, *chunkSize, *wait)
 
 	log.Println("... Finished")
 }
