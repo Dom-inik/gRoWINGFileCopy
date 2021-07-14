@@ -8,7 +8,20 @@ import (
 	"time"
 )
 
-func copy(src string, dst string) {
+// This is the original io.CopyN function improved by using io.CopyBuffer instead of io.Copy
+func copyBufferN(dst io.Writer, src io.Reader, b []byte, n int64) (written int64, err error) {
+	written, err = io.CopyBuffer(dst, io.LimitReader(src, n), b)
+	if written == n {
+		return n, nil
+	}
+	if written < n && err == nil {
+		// src stopped early; must have been EOF.
+		//err = io.EOF
+	}
+	return
+}
+
+func copy(src string, dst string, chunk int64) {
 	// Open the source file in read only mode
 	s, err := os.OpenFile(src, os.O_RDONLY, 0644)
 	if err != nil {
@@ -70,7 +83,17 @@ func copy(src string, dst string) {
 			}
 
 			// Copy the data. It returns us how many bytes have been copied
-			written, err := io.Copy(d, s)
+			// Use 2 MB Buffer size
+			buf := make([]byte, 2*1024*1024)
+
+			var written int64
+			var err error
+
+			if chunk != 0 {
+				written, err = copyBufferN(d, s, buf, chunk)
+			} else {
+				written, err = io.Copy(d, s)
+			}
 			if err != nil {
 				d.Close()
 				log.Fatal(err)
@@ -98,10 +121,11 @@ func main() {
 	log.Println("Started ...")
 	var src = flag.String("src", "", "source file path")
 	var dst = flag.String("dst", "", "destination file path")
+	var chunkSize = flag.Int64("cs", 50*1024*1024, "chunk size in byte")
 
 	flag.Parse()
 
-	copy(*src, *dst)
+	copy(*src, *dst, *chunkSize)
 
 	log.Println("... Finished")
 }
